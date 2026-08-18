@@ -1,0 +1,65 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>验证码</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f4f6f8; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">
+
+    <!-- 外部容器：灰色背景，居中 -->
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+        <tr>
+            <td style="padding: 20px 0 30px 0;" align="center">
+
+                <!-- 卡片容器：白色背景，圆角，阴影 -->
+                <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="600" style="background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); overflow: hidden;">
+
+                    <!-- 1. 顶部 Header -->
+                    <tr>
+                        <td bgcolor="#007bff" style="padding: 30px 30px; text-align: center;">
+                            <!-- 这里可以换成你的 Logo 图片 <img src="..." /> -->
+                            <h1 style="margin: 0; font-size: 24px; color: #ffffff; letter-spacing: 1px;">
+                                {SystemName}
+                            </h1>
+                        </td>
+                    </tr>
+
+                    <!-- 2. 内容主体 -->
+                    <tr>
+                        <td style="padding: 40px 30px;">
+                            <p style="margin: 0 0 20px 0; color: #333333; font-size: 16px;">
+                                亲爱的用户 <strong>{UserName}</strong>，你好！
+                            </p>
+                            <p style="margin: 0 0 20px 0; color: #555555; font-size: 15px; line-height: 1.5;">
+                                您正在进行身份验证操作。请在验证页面输入以下 6 位数字验证码。
+                            </p>
+
+                            <!-- 验证码高亮区域 -->
+                            <div style="background-color: #f0f7ff; border-left: 4px solid #007bff; padding: 20px; margin: 30px 0; text-align: center; border-radius: 4px;">
+                                <span style="font-size: 32px; font-weight: bold; color: #007bff; letter-spacing: 5px; font-family: monospace;">
+                                    {Code}
+                                </span>
+                            </div>
+
+                            <p style="margin: 0; color: #999999; font-size: 13px;">
+                                * 验证码有效期为 10 分钟。如果这不是您本人的操作，请忽略此邮件，您的账号是安全的。
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- 3. 底部 Footer -->
+                    <tr>
+                        <td bgcolor="#f8f9fa" style="padding: 20px 30px; text-align: center; border-top: 1px solid #eeeeee;">
+                            <p style="margin: 0; color: #aaaaaa; font-size: 12px;">
+                                &copy; {Year} {SystemName} 网盘系统. All rights reserved.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+
+            </td>
+        </tr>
+    </table>
+
+</body>
+</html>
