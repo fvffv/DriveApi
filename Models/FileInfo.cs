@@ -3,14 +3,12 @@
 namespace drive_api.Models
 {
     [SugarTable("file_info", "用户文件表")] // 将类映射到 'file_info' 表，并添加表注释
-    [SugarIndex("idx_userid_fileid", nameof(FileInfo.UserId), OrderByType.Desc, nameof(FileInfo.Id), OrderByType.Desc)]
-    [SugarIndex("user_id", nameof(FileInfo.UserId), OrderByType.Desc)]
-    [SugarIndex("file_id", nameof(FileInfo.Id), OrderByType.Desc, true)]
-    [SugarIndex("file_hash", nameof(FileInfo.FileHash), OrderByType.Asc)]
-    [SugarIndex("file_type", nameof(FileInfo.FileType), OrderByType.Asc)]
-    [SugarIndex("file_size_bytes", nameof(FileInfo.FileSizeInBytes), OrderByType.Asc)]
-    [SugarIndex("storage_path", nameof(FileInfo.StoragePath), OrderByType.Asc)]
-    [SugarIndex("folder_id", nameof(FileInfo.FolderId), OrderByType.Asc)]
+    [SugarIndex("ux_file_info_id", nameof(FileInfo.Id), OrderByType.Asc, true)]
+    [SugarIndex("ix_file_info_user_folder_deleted_created", nameof(FileInfo.UserId), OrderByType.Asc, nameof(FileInfo.FolderId), OrderByType.Asc, nameof(FileInfo.IsDeleted), OrderByType.Asc, nameof(FileInfo.CreationTime), OrderByType.Desc)]
+    [SugarIndex("ix_file_info_user_deleted", nameof(FileInfo.UserId), OrderByType.Asc, nameof(FileInfo.IsDeleted), OrderByType.Asc)]
+    [SugarIndex("ix_file_info_hash_deleted", nameof(FileInfo.FileHash), OrderByType.Asc, nameof(FileInfo.IsDeleted), OrderByType.Asc)]
+    [SugarIndex("ix_file_info_storage_path_deleted", nameof(FileInfo.StoragePath), OrderByType.Asc, nameof(FileInfo.IsDeleted), OrderByType.Asc)]
+    [SugarIndex("ix_file_info_created", nameof(FileInfo.CreationTime), OrderByType.Desc)]
     public class FileInfo
     {
         /// <summary>

@@ -4,6 +4,9 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Spreadsheet;
+using UglyToad.PdfPig;
 
 namespace drive_api.Services.Tool
 {
@@ -15,7 +18,7 @@ namespace drive_api.Services.Tool
 
         private readonly AppConfigInfo _appConfigInfo;
 
-        private readonly ILogger<FileHandler> _logger;
+        private readonly ILogger<FileService> _logger;
 
         private static readonly Random _random = new Random();
 
@@ -120,13 +123,45 @@ namespace drive_api.Services.Tool
         { "cmd", "代码" },
         { "ps1", "代码" }
     };
+        /// <summary>
+        /// 可读文本类型的文件扩展名集合，用于判断文件是否为文本类型
+        /// </summary>
+        public static readonly HashSet<string> TextExtensions =
+    [
+        // 基础文本与标记文档
+         ".txt", ".md", ".csv", ".log", ".rtf", ".tex",
+    
+        // 配置文件与数据交换
+        ".json", ".xml", ".yml", ".yaml", ".toml", ".ini", ".conf", ".config", ".env",
+    
+        // Web 前端
+        ".html", ".htm", ".css", ".scss", ".sass", ".less",
+        ".js", ".jsx", ".ts", ".tsx", ".vue", ".svelte",
+    
+        // 后端与系统级编程语言
+        ".cs", ".java", ".py", ".cpp", ".c", ".h", ".hpp", ".go", ".rs",
+        ".php", ".rb", ".kt", ".swift", ".scala", ".dart", ".lua",
+    
+        // 数据库与查询
+        ".sql",
+    
+        // 脚本与批处理
+        ".sh", ".bash", ".zsh", ".bat", ".cmd", ".ps1"
+    ];
+        /// <summary>
+        /// 可读文本类型的文件扩展名集合，用于判断文件是否为文本类型
+        /// </summary>
+        public static readonly HashSet<string> DocExtensions =
+        [
+            ".docx", ".xlsx", ".pptx", ".pdf",
 
+        ];
         /// <summary>
         /// 构造函数：初始化配置、日志记录器以及文件路径相关的正则表达式
         /// </summary>
         /// <param name="appConfigInfo">应用全局配置信息</param>
         /// <param name="logger">文件处理日志记录器</param>
-        public Helper(AppConfigInfo appConfigInfo, ILogger<FileHandler> logger)
+        public Helper(AppConfigInfo appConfigInfo, ILogger<FileService> logger)
         {
             _appConfigInfo = appConfigInfo;
             _logger = logger;
@@ -384,6 +419,180 @@ namespace drive_api.Services.Tool
                 return 0;
             }
             return 1;
+        }
+
+
+        /// <summary>
+        /// 根据文件扩展名读取 DOCX、PPTX、XLSX 或 PDF 的全部文本。
+        /// </summary>
+        public static string ExtractAllText(string filePath, string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                throw new ArgumentException("文件路径不能为空。", nameof(filePath));
+            }
+
+            if (!File.Exists(filePath))
+            {
+                throw new FileNotFoundException("找不到文件。", filePath);
+            }
+
+            return Path.GetExtension(fileName).ToLowerInvariant() switch
+            {
+                ".docx" => ExtractDocx(filePath),
+                ".pptx" => ExtractPptx(filePath),
+                ".xlsx" => ExtractXlsx(filePath),
+                ".pdf" => ExtractPdf(filePath),
+                _ => throw new NotSupportedException(
+                    "只支持 .docx、.pptx、.xlsx 和 .pdf 文件。")
+            };
+        }
+
+        /// <summary>
+        /// 生成一个指定长度的安全随机字符串，包含大写字母、小写字母和数字。
+        /// </summary>
+        /// <param name="length">字符串长度</param>
+        /// <returns></returns>
+
+        public static string GenerateSecureRandomString(int length)
+        {
+            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+            var data = new byte[length];
+            RandomNumberGenerator.Fill(data);
+
+            return string.Create(length, (data, chars), (span, state) =>
+            {
+                var (bytes, charSet) = state;
+                for (int i = 0; i < span.Length; i++)
+                {
+                    span[i] = charSet[bytes[i] % charSet.Length];
+                }
+            });
+        }
+        private static string ExtractDocx(string filePath)
+        {
+            using var document = WordprocessingDocument.Open(filePath, false);
+            var body = document.MainDocumentPart?.Document?.Body;
+
+            if (body is null)
+            {
+                return string.Empty;
+            }
+
+            // 用 Descendants 可以同时读取正文和表格中的段落文本。
+            return string.Join(
+                Environment.NewLine,
+                body.Descendants<DocumentFormat.OpenXml.Wordprocessing.Paragraph>()
+                    .Select(paragraph => paragraph.InnerText.Trim())
+                    .Where(text => text.Length > 0));
+        }
+
+        private static string ExtractPptx(string filePath)
+        {
+            using var document = PresentationDocument.Open(filePath, false);
+            var presentationPart = document.PresentationPart;
+
+            if (presentationPart is null)
+            {
+                return string.Empty;
+            }
+
+            var slideTexts = presentationPart.SlideParts
+                .Select(slide =>
+                {
+                    var texts = (slide.Slide?.Descendants<DocumentFormat.OpenXml.Drawing.Text>()
+                     ?? Enumerable.Empty<DocumentFormat.OpenXml.Drawing.Text>())
+                     .Select(text => text.Text.Trim())
+                     .Where(text => text.Length > 0);
+
+                    return string.Join(Environment.NewLine, texts);
+                });
+
+            return string.Join(
+                Environment.NewLine + Environment.NewLine,
+                slideTexts);
+        }
+
+        private static string ExtractXlsx(string filePath)
+        {
+            using var document = SpreadsheetDocument.Open(filePath, false);
+            var workbookPart = document.WorkbookPart;
+
+            if (workbookPart is null)
+            {
+                return string.Empty;
+            }
+
+            var sharedStrings = workbookPart
+                .SharedStringTablePart?
+                .SharedStringTable;
+
+            var builder = new StringBuilder();
+
+            foreach (var sheet in workbookPart.Workbook?.Sheets?.Elements<Sheet>() ?? [])
+            {
+                var relationshipId = sheet.Id?.Value;
+                if (string.IsNullOrWhiteSpace(relationshipId))
+                {
+                    continue;
+                }
+
+                if (workbookPart.GetPartById(relationshipId) is not WorksheetPart worksheetPart)
+                {
+                    continue;
+                }
+
+                builder.AppendLine($"[工作表: {sheet.Name?.Value ?? "未命名"}]");
+
+                foreach (var row in worksheetPart.Worksheet?.Descendants<Row>() ?? [])
+                {
+                    var values = row.Elements<Cell>()
+                        .Select(cell => ReadCellValue(cell, sharedStrings));
+
+                    builder.AppendLine(string.Join("\t", values));
+                }
+
+                builder.AppendLine();
+            }
+
+            return builder.ToString().Trim();
+        }
+
+        private static string ReadCellValue(
+            Cell cell,
+            SharedStringTable? sharedStrings)
+        {
+            var value = cell.CellValue?.Text ?? cell.InnerText;
+
+            if (cell.DataType?.Value == CellValues.SharedString &&
+                int.TryParse(value, out var sharedStringIndex) &&
+                sharedStrings is not null)
+            {
+                return sharedStrings
+                    .Elements<SharedStringItem>()
+                    .ElementAtOrDefault(sharedStringIndex)?
+                    .InnerText ?? value;
+            }
+
+            if (cell.DataType?.Value == CellValues.InlineString)
+            {
+                return cell.InlineString?.InnerText ?? value;
+            }
+
+            return value;
+        }
+
+        private static string ExtractPdf(string filePath)
+        {
+            using var document = PdfDocument.Open(filePath);
+            var builder = new StringBuilder();
+
+            foreach (var page in document.GetPages())
+            {
+                builder.AppendLine(page.Text);
+            }
+
+            return builder.ToString().Trim();
         }
     }
 }

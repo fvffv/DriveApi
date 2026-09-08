@@ -3,8 +3,7 @@
 namespace drive_api.Models
 {
     [SugarTable("traffic_statistics", "每日流量记录")]
-    [SugarIndex("id", nameof(TrafficStatisticsModel.Id), OrderByType.Desc, true)]
-    [SugarIndex("date", nameof(TrafficStatisticsModel.Date), OrderByType.Desc, true)]
+    [SugarIndex("ux_traffic_statistics_date", nameof(TrafficStatisticsModel.Date), OrderByType.Desc, true)]
     public class TrafficStatisticsModel
     {
         [SugarColumn(IsPrimaryKey = true, ColumnName = "id", ColumnDescription = "唯一id")]

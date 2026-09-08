@@ -23,7 +23,7 @@ namespace drive_api.Services.MQ
                 topic: "ImgComp",
                 subscriberName: "ImgComp",
                 handler: HandleMessageAsync,
-                concurrencyCount: 5  // 这里设置并发数
+                concurrencyCount: 3  // 这里设置并发数
             );
         }
 
@@ -34,7 +34,7 @@ namespace drive_api.Services.MQ
             //压缩图片并保存到指定路径，命名为原文件hash值.jpg
             CreateThumbnail(message.StoragePath, Path.Combine(_env.WebRootPath, "driveassets/imgcomp", message.FileHash + ".jpg"), 100, 100);
 
-            logger.LogInformation($"图片缩略图 {message.StoragePath} 处理完成！");
+            _logger.LogInformation($"图片缩略图 {message.StoragePath} 处理完成！");
         }
 
         private void CreateThumbnail(string inputPath, string outputPath, int width, int height)
@@ -46,7 +46,7 @@ namespace drive_api.Services.MQ
                 image.Mutate(x => x.Resize(new ResizeOptions
                 {
                     Size = new Size(width, height),
-                    Mode = ResizeMode.Crop // 裁剪模式：保持比例，裁剪掉多余部分 (云盘头像/缩略图最常用)
+                    Mode = ResizeMode.Crop // 裁剪模式：保持比例，裁剪掉多余部分
                 }));
 
                 image.Save(outputPath); // 根据后缀自动推断保存格式

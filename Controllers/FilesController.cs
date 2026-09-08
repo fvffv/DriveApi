@@ -11,10 +11,10 @@ namespace drive_api.Controllers
 {
     [Route("api/[controller]/[action]")]
     [ApiController]
-    public class FilesController(ILogger<FilesController> logger, FileHandler fh, AppConfigInfo appConfigInfo) : ControllerBase
+    public class FilesController(ILogger<FilesController> logger, FileService fh, AppConfigInfo appConfigInfo) : ControllerBase
     {
         private readonly ILogger<FilesController> _logger = logger;
-        private readonly FileHandler _fh = fh;
+        private readonly FileService _fh = fh;
         private readonly AppConfigInfo _appConfigInfo = appConfigInfo;
         private readonly ulong MaxFileSize = appConfigInfo.fileSetting.MaxFileSize;
         [HttpPost]
@@ -24,7 +24,7 @@ namespace drive_api.Controllers
         [TrackTraffic]
         public async Task<IActionResult> UploadFile(
         [FromForm] IFormFile file,
-        [FromForm] string folderId = FileHandler.defaultGuid)
+        [FromForm] string folderId = FileService.defaultGuid)
         {
             string userId = GetUserId();
             // 1. 基本验证

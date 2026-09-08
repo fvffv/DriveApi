@@ -10,14 +10,14 @@ using System.Text.Json;
 
 namespace drive_api.Services.WebDav
 {
-    public class MemoryWebDavProvider(FileHandler fileHandler, AppConfigInfo appConfigInfo, ILogger<MemoryWebDavProvider> logger, ICache icache, ISqlSugarClient sqlSugarClient, UserHandler userHandler) : IWebDavProvider
+    public class MemoryWebDavProvider(FileService fileHandler, AppConfigInfo appConfigInfo, ILogger<MemoryWebDavProvider> logger, ICache icache, ISqlSugarClient sqlSugarClient, UserService userHandler) : IWebDavProvider
     {
         private readonly ILogger<MemoryWebDavProvider> _logger = logger;
         private readonly ICache _icache = icache;
         private readonly ISqlSugarClient _sqlSugarClient = sqlSugarClient;
-        private readonly UserHandler _userHandler = userHandler;
+        private readonly UserService _userHandler = userHandler;
         private readonly AppConfigInfo _appConfigInfo = appConfigInfo;
-        private readonly FileHandler _fileHandler = fileHandler;
+        private readonly FileService _fileHandler = fileHandler;
         private string userpassword = "";
 
 

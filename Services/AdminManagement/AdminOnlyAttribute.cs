@@ -12,7 +12,7 @@ namespace drive_api.Services.AdminManagement
         public override async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
         {
             var user = context.HttpContext.User;
-            var _userHandler = context.HttpContext.RequestServices.GetRequiredService<UserHandler>();
+            var _userHandler = context.HttpContext.RequestServices.GetRequiredService<UserService>();
             // 这里调用 IsAdmin 方法来检查当前用户是否是管理员
             if (!await IsAdmin(user, _userHandler))
             {
@@ -26,7 +26,7 @@ namespace drive_api.Services.AdminManagement
             await base.OnActionExecutionAsync(context, next);
         }
 
-        private async Task<bool> IsAdmin(ClaimsPrincipal user, UserHandler _userHandler)
+        private async Task<bool> IsAdmin(ClaimsPrincipal user, UserService _userHandler)
         {
             string uid = user.FindFirst(ClaimTypes.NameIdentifier)!.Value;
             var userInfo = await _userHandler.GetUserInfo(uid);

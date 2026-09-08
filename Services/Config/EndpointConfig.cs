@@ -14,5 +14,7 @@
         public string CertPath { get; set; } = string.Empty;
         public string CertPassword { get; set; } = string.Empty;
     }
+
+    
 }
 

@@ -1,10 +1,13 @@
-﻿using drive_api.Models;
+﻿using DocumentFormat.OpenXml.Drawing.Charts;
+using drive_api;
+using drive_api.Models;
 using drive_api.Services.AdminManagement;
 using drive_api.Services.AI;
 using drive_api.Services.Cache;
 using drive_api.Services.Config;
 using drive_api.Services.Db;
 using drive_api.Services.Email;
+using drive_api.Services.ExternalDrive;
 using drive_api.Services.FileManagement;
 using drive_api.Services.MQ;
 using drive_api.Services.Tool;
@@ -17,20 +20,39 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.Data.Sqlite;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.SemanticKernel;
 using MimeDetective;
 using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Events;
+using Serilog.Sinks.SQLite;
 using SqlSugar;
+using System.Data;
 using System.Net;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 using System.Threading.RateLimiting;
+using static Org.BouncyCastle.Math.EC.ECCurve;
+using DbType = SqlSugar.DbType;
+
+
+InitConfig();
 var builder = WebApplication.CreateBuilder(args);
-var appConfig = new AppConfigInfo(builder.Configuration);
 if (!SystemdInitilization()) return;
+
+var appConfig = new AppConfigInfo(builder.Configuration);
+if (string.IsNullOrEmpty(appConfig.jwtSetting.SigningKey))
+{
+
+    appConfig.jwtSetting.SigningKey = Helper.GenerateSecureRandomString(128); // 生成随机签名密钥
+    File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), JsonSerializer.Serialize(appConfig, new JsonSerializerOptions { WriteIndented = true }));
+}
+
+
 ServerInitialization();
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
@@ -56,9 +78,12 @@ builder.Services.AddCors(options =>
 InitLogToDB();
 RateLimiterServerInitialization();
 builder.Services.AddScoped<IWebDavProvider, MemoryWebDavProvider>();
-builder.Services.AddScoped<AdminHandler>();
-builder.Services.AddScoped<FileHandler>();
-builder.Services.AddScoped<UserHandler>();
+builder.Services.AddScoped<AdminService>();
+builder.Services.AddScoped<FileService>();
+builder.Services.AddScoped<UserService>();
+builder.Services.AddScoped<ExternalDriveService>();
+builder.Services.AddScoped<ICloudDriveProvider, BaiduDriveProvider>();
+
 builder.Services.AddSingleton(appConfig);
 builder.Services.AddSingleton<Helper>();
 //注册后台托管服务 定时清理分片文件
@@ -81,7 +106,6 @@ CacheServiceInitialization();
 EmailServiceInitialization();
 TrafficStatisticsInitialization();
 var app = builder.Build();
-
 DbInitialization();
 await FileManagementInitialization();
 CachetInitialization();
@@ -135,8 +159,42 @@ app.Map("/webdav", webdavApp =>
 app.UseMiddleware<ApiTrafficMiddleware>();
 app.Run();
 
-//注册启动服务
-bool SystemdInitilization()
+
+void InitConfig()
+{
+    // 检查配置文件是否存在，如果不存在则创建默认配置
+    string applocationPath = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+    //邮件发送模板文件路径
+    string emailTemplatePath = Path.Combine(AppContext.BaseDirectory, "EmailCodeTemplate.html");
+    if (!File.Exists(applocationPath))
+    {
+        Console.WriteLine("配置文件不存在，正在创建默认配置...");
+        var assembly = Assembly.GetExecutingAssembly();
+        using var stream = assembly.GetManifestResourceStream("drive_api.appsettings.json");
+        var config = JsonSerializer.Deserialize<AppConfigInfo>(new StreamReader(stream).ReadToEnd());
+
+        config.jwtSetting.SigningKey = Helper.GenerateSecureRandomString(128); // 生成随机签名密钥
+        File.WriteAllText(applocationPath, JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
+
+        Console.WriteLine("基本配置已生成,还有一项 EmailConfig 必填项请您打开目录下生成的 appsettings.json 文件进行配置...\n此项用于注册账号所发送的邮件服务");
+        
+    }
+  
+    if (!File.Exists(emailTemplatePath))
+    {
+        Console.WriteLine("邮件模板文件不存在，正在创建默认模板...");
+        var assembly = Assembly.GetExecutingAssembly();
+        using var stream = assembly.GetManifestResourceStream("drive_api.EmailCodeTemplate.html");
+        File.WriteAllText(emailTemplatePath, new StreamReader(stream).ReadToEnd());
+
+    }
+    Directory.CreateDirectory(Path.Combine(AppContext.BaseDirectory, "wwwroot/driveassets/imgcomp"));
+    Directory.CreateDirectory(Path.Combine(AppContext.BaseDirectory, "Onnx/bgem3"));
+    Directory.CreateDirectory(Path.Combine(AppContext.BaseDirectory, "Onnx/vit"));
+
+}
+    //注册启动服务
+    bool SystemdInitilization()
 {
     // 如果命令行参数包含 "init"，则执行安装服务的逻辑
     if (args.Contains("install"))
@@ -322,15 +380,11 @@ void ServerInitialization()
 
         if (serverSettings == null) return;
 
-        // ==========================================
-        // 配置 IPv4 终结点
-        // ==========================================
+        // 配置 IPv4
         if (serverSettings.IPv4 != null)
         {
             // 尝试解析 IP，如果是 0.0.0.0 则使用 IPAddress.Any
-            var ipV4Address = serverSettings.IPv4.Ip == "0.0.0.0"
-                ? IPAddress.Any
-                : IPAddress.Parse(serverSettings.IPv4.Ip);
+            var ipV4Address = serverSettings.IPv4.Ip == "0.0.0.0"? IPAddress.Any: IPAddress.Parse(serverSettings.IPv4.Ip);
 
             options.Listen(ipV4Address, serverSettings.IPv4.Port, listenOptions =>
             {
@@ -354,16 +408,12 @@ void ServerInitialization()
             });
         }
 
-        // ==========================================
-        // 配置 IPv6 终结点
-        // ==========================================
+        // 配置 IPv6 
         if (serverSettings.IPv6 != null)
         {
             // 去除 JSON 中可能带的方括号 [::] 以便于 IPAddress 解析
             string cleanIp6 = serverSettings.IPv6.Ip.Replace("[", "").Replace("]", "");
-            var ipV6Address = cleanIp6 == "::"
-                ? IPAddress.IPv6Any
-                : IPAddress.Parse(cleanIp6);
+            var ipV6Address = cleanIp6 == "::"? IPAddress.IPv6Any: IPAddress.Parse(cleanIp6);
 
             options.Listen(ipV6Address, serverSettings.IPv6.Port, listenOptions =>
             {
@@ -387,8 +437,8 @@ void ServerInitialization()
 void AIInitilization()
 {
 
-    builder.Services.AddSingleton<AiVectorService>();
-
+    builder.Services.AddSingleton<ImgAiVectorService>();
+    builder.Services.AddSingleton<TextAiVectorService>();
 
     var customHttpClient = new HttpClient
     {
@@ -429,6 +479,7 @@ void MQInitialization()
     // 注册缩略图制作消费者
     builder.Services.AddHostedService<ImgCompConsumer>();
     builder.Services.AddHostedService<ImgVectorConsumer>();
+    builder.Services.AddHostedService<TextVectorConsumer>();
 }
 
 //频率限制服务初始化
@@ -484,11 +535,48 @@ void InitLogToDB()
 
     if (appConfig.dbSetting.LogWriteToDB)
     {
-        conf.WriteTo.Async(a => a.PostgreSQL( // 异步批量输出到数据库
-        connectionString: appConfig.dbSetting.ConnectionString,
-        tableName: "sys_logs", // 数据库中自动建表的表名
-        needAutoCreateTable: true,
-        restrictedToMinimumLevel: LogEventLevel.Information));//记录的日志级别
+        var dbType = (SqlSugar.DbType)appConfig.dbSetting.DbType;
+        switch (dbType)
+        {
+            case SqlSugar.DbType.PostgreSQL:
+                // 异步批量输出到数据库
+                conf.WriteTo.Async(a => a.PostgreSQL(   
+                    connectionString: appConfig.dbSetting.ConnectionString, 
+                    tableName: "sys_logs", // 数据库中自动建表的表名
+                    needAutoCreateTable: true,
+                    restrictedToMinimumLevel: LogEventLevel.Information)); //记录的日志级别
+                break;
+
+            case SqlSugar.DbType.Sqlite:
+                {
+                    var sqlitePath = new SqliteConnectionStringBuilder(
+                        appConfig.dbSetting.ConnectionString).DataSource;
+
+                    if (string.IsNullOrWhiteSpace(sqlitePath))
+                    {
+                        throw new InvalidOperationException(
+                            "SQLite 连接字符串中没有配置 Data Source。");
+                    }
+
+                    conf.WriteTo.Async(a => a.SQLite(
+                        sqliteDbPath: sqlitePath,
+                        tableName: "sys_logs",
+                        storeTimestampInUtc: true,
+                        batchSize: 50,
+                        maxDatabaseSize: 20480,
+                        rollOver: false,
+                        retentionPeriod: TimeSpan.FromDays(15),
+                        journalMode: SqliteJournalMode.Wal,
+                        restrictedToMinimumLevel: LogEventLevel.Information));
+
+                    break;
+                }
+
+            default:
+                Console.Error.WriteLine(
+                    $"数据库 {dbType} 没有配置对应的 Serilog Sink。目前只支持 PostgreSQL 和 SQLite 记录日志。");
+                break;
+        }
     }
     Log.Logger = conf.CreateLogger();
     builder.Host.UseSerilog();
@@ -577,6 +665,7 @@ void DbServiceInitialization()
         throw new InvalidOperationException("dbc 配置缺失或无效，请检查 appsettings.json 文件中的 'DbConfig' 部分。");
     }
 
+    var isSqlite = (DbType)dbc.DbType == DbType.Sqlite;
     // 注册 SqlSugar 用 AddScoped
     builder.Services.AddScoped<ISqlSugarClient>(s =>
     {
@@ -585,9 +674,9 @@ void DbServiceInitialization()
         // Scoped 用 SqlSugarClient 
         SqlSugarClient sqlSugar = new SqlSugarClient(new ConnectionConfig()
         {
-            DbType = (DbType)dbc.DbType,
+            DbType = ( DbType)dbc.DbType,
             ConnectionString = dbc.ConnectionString,
-            IsAutoCloseConnection = true,
+            IsAutoCloseConnection = !isSqlite,
 
         },
         db =>
@@ -599,6 +688,19 @@ void DbServiceInitialization()
 
         });
 
+        if (isSqlite && appConfig.aiSetting.Enable)
+        {
+            sqlSugar.Ado.Open();
+
+            if (sqlSugar.Ado.Connection is not SqliteConnection sqliteConnection)
+            {
+                throw new InvalidOperationException(
+                    $"当前连接不是 SqliteConnection，实际类型：{sqlSugar.Ado.Connection?.GetType().FullName}");
+            }
+
+            // 每个 Scoped SqlSugarClient 只加载一次
+            sqliteConnection.LoadVector();
+        }
 
         return sqlSugar;
     });
@@ -634,7 +736,7 @@ void CacheServiceInitialization()
             redisClient = new RedisClient(cacheConfig.ConnectionString);
             // 2. 立即执行一个操作来验证连接
             redisClient.Ping();
-            builder.Services.AddSingleton<ICache, Redis>(); // 注册你的服务
+            builder.Services.AddSingleton<ICache, Redis>(); // 注册服务
         }
         catch (Exception ex)
         {
@@ -658,7 +760,7 @@ void CacheServiceInitialization()
 //邮箱服务初始化
 void EmailServiceInitialization()
 {
-    builder.Services.AddSingleton<EmailHandler>();
+    builder.Services.AddSingleton<EmailService>();
 }
 //数据库初始化
 async Task DbInitialization()
@@ -681,10 +783,59 @@ async Task DbInitialization()
 
         }
         //初始化表
-        if (dbClient.CurrentConnectionConfig.DbType != DbType.PostgreSQL)
+        if (dbClient.CurrentConnectionConfig.DbType != DbType.PostgreSQL && dbClient.CurrentConnectionConfig.DbType != DbType.Sqlite)
         {
-            app.Logger.LogWarning("当前非PostgreSQL数据库 已关闭AI功能，目前不想引用外部向量数据库，暂时用的是PG向量插件，若要使用，请确保安装了插件");
+            app.Logger.LogWarning("当前非PostgreSQL或Sqlite数据库 已关闭AI功能，目前不想引用外部向量数据库，暂时用的是PG向量插件或内置sqlite向量，若要使用，请确保安装了插件");
             appConfig.aiSetting.Enable = false;
+        }
+        // vector 类型必须在 CodeFirst 创建向量表之前注册。
+        bool vectorReady = false;
+        var dbType = dbClient.CurrentConnectionConfig.DbType;
+
+        // 只有既不是 PostgreSQL，也不是 SQLite 时，才关闭 AI
+        if (dbType != DbType.PostgreSQL && dbType != DbType.Sqlite)
+        {
+            app.Logger.LogWarning(
+                "当前数据库不支持已配置的向量功能，已关闭 AI 功能");
+            appConfig.aiSetting.Enable = false;
+        }
+
+
+        if (appConfig.aiSetting.Enable && (dbType == DbType.PostgreSQL || dbType == DbType.Sqlite))
+        {
+            try
+            {
+                if (dbType == DbType.PostgreSQL)
+                {
+                    // PostgreSQL 使用 pgvector
+                    dbClient.Ado.ExecuteCommand(
+                        "CREATE EXTENSION IF NOT EXISTS vector;");
+
+                    vectorReady = true;
+                }
+                else if (dbType == DbType.Sqlite)
+                {
+                    // SQLite 使用 sqlite-vec
+                    dbClient.Ado.Open();
+
+                    if (dbClient.Ado.Connection is not SqliteConnection sqliteConnection)
+                    {
+                        throw new InvalidOperationException(
+                            $"SqlSugar 实际连接类型不是 SqliteConnection，当前类型：{dbClient.Ado.Connection?.GetType().FullName}");
+                    }
+
+                    // sqlite-vec
+                    sqliteConnection.LoadVector();
+
+                    vectorReady = true;
+                }
+            }
+            catch (Exception e)
+            {
+                app.Logger.LogError(e, "{DbType} 向量扩展加载失败，AI 向量功能已关闭", dbType);
+                appConfig.aiSetting.Enable = false;
+                vectorReady = false;
+            }
         }
         if (!dbClient.DbMaintenance.IsAnyTable("users"))
         {
@@ -711,13 +862,96 @@ async Task DbInitialization()
             app.Logger.LogWarning("traffic_statistics表不存在，将重新创建表");
             dbClient.CodeFirst.InitTables(typeof(drive_api.Models.TrafficStatisticsModel));
         }
-        if (!dbClient.DbMaintenance.IsAnyTable("img_vectorcs") && appConfig.aiSetting.Enable == true && dbClient.CurrentConnectionConfig.DbType == DbType.PostgreSQL)
+        if (!dbClient.DbMaintenance.IsAnyTable("external_drives"))
         {
-
-            app.Logger.LogWarning("img_vectorcs表不存在，将重新创建表，注意：需要安装对应数据库的向量插件,并且进入drive数据库输入 CREATE EXTENSION vector 来启用,否则无法使用语义搜索");
-            dbClient.CodeFirst.InitTables(typeof(drive_api.Models.ImgVectorcs));
-            dbClient.SqlQueryable<ImgVectorcs>("CREATE EXTENSION vector;CREATE INDEX idx_img_vector_hnsw ON img_vectorcs USING hnsw (vector vector_cosine_ops);");
+            app.Logger.LogWarning("external_drives表不存在，将重新创建表");
+            dbClient.CodeFirst.InitTables(typeof(drive_api.Services.ExternalDrive.ExternalDriveModel));
         }
+        //如果是Sqlite 数据库 单独创建向量表
+        if (dbType == DbType.Sqlite)
+        {
+            try
+            {
+                // 图片向量：每个文件只有一条向量
+                dbClient.Ado.ExecuteCommand("""
+                    CREATE VIRTUAL TABLE IF NOT EXISTS img_vectorcs
+                    USING vec0(
+                        file_id TEXT PRIMARY KEY,
+                        user_id TEXT,
+                        vector FLOAT[768] distance_metric=cosine
+                    );
+                    """);
+
+                // 文本向量：同一个文件可以有多个文本分块
+                dbClient.Ado.ExecuteCommand("""
+                    CREATE VIRTUAL TABLE IF NOT EXISTS text_vectorcs
+                    USING vec0(
+                        file_id TEXT,
+                        user_id TEXT,
+                        chunk_id INTEGER,
+                        vector FLOAT[1024] distance_metric=cosine
+                    );
+                    """);
+
+                app.Logger.LogInformation(
+                    "SQLite vec0 图片和文本向量表初始化完成");
+            }
+            catch (Exception e)
+            {
+                app.Logger.LogError(
+                    e,
+                    "SQLite vec0 向量表创建失败，AI 向量功能已关闭");
+
+                vectorReady = false;
+                appConfig.aiSetting.Enable = false;
+            }
+        }
+        if (dbType == DbType.PostgreSQL)
+        {
+            if (!dbClient.DbMaintenance.IsAnyTable("img_vectorcs") && vectorReady)
+            {
+                app.Logger.LogWarning("img_vectorcs表不存在，将重新创建表，注意：需要安装对应数据库的向量插件,并且进入drive数据库输入 CREATE EXTENSION vector 来启用,否则无法使用语义搜索");
+                dbClient.CodeFirst.InitTables(typeof(drive_api.Models.ImgVectorcs));
+            }
+            if (!dbClient.DbMaintenance.IsAnyTable("text_vectorcs") && vectorReady)
+            {
+                app.Logger.LogWarning("text_vectorcs表不存在，将重新创建表，注意：需要安装对应数据库的向量插件,并且进入drive数据库输入 CREATE EXTENSION vector 来启用,否则无法使用语义搜索");
+                dbClient.CodeFirst.InitTables(typeof(drive_api.Models.TextVectorcs));
+            }
+                dbClient.Ado.ExecuteCommand("""
+            CREATE INDEX IF NOT EXISTS ix_img_vectorcs_user_id
+            ON img_vectorcs(user_id);
+            """);
+
+                dbClient.Ado.ExecuteCommand("""
+            CREATE INDEX IF NOT EXISTS ix_text_vectorcs_user_file_chunk
+            ON text_vectorcs(user_id, file_id, chunk_id);
+            """);
+
+                dbClient.Ado.ExecuteCommand("""
+            CREATE INDEX IF NOT EXISTS idx_img_vector_hnsw
+            ON img_vectorcs
+            USING hnsw(vector vector_cosine_ops);
+            """);
+            //pg专属向量索引
+            if (vectorReady && dbClient.DbMaintenance.IsAnyTable("img_vectorcs"))
+            {
+                try
+                {
+                    dbClient.Ado.ExecuteCommand("CREATE INDEX IF NOT EXISTS idx_img_vector_hnsw ON img_vectorcs USING hnsw (vector vector_cosine_ops);");
+                }
+                catch (Exception e)
+                {
+                    app.Logger.LogError(e, "创建 img_vectorcs HNSW 索引失败，图像语义搜索将退化为普通扫描");
+                }
+            }
+        }
+
+
+
+
+        EnsureApplicationIndexes(dbClient);
+
 
 
 
@@ -726,6 +960,92 @@ async Task DbInitialization()
 
 
 }
+
+// 为已经存在的数据库补齐索引。CodeFirst.InitTables 只会在建表时读取
+// [SugarIndex]，所以仅修改模型属性无法修复用户已经删除的索引。
+void EnsureApplicationIndexes(ISqlSugarClient dbClient)
+{
+    var obsoleteIndexes = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["users"] = ["user_id", "Username", "email", "created_at"],
+        ["file_info"] = ["idx_userid_fileid", "user_id", "file_id", "file_hash", "file_type", "file_size_bytes", "storage_path", "folder_id"],
+        ["folder_info"] = ["idx_userid_fileid", "id", "parent_id", "user_id"],
+        ["file_share"] = ["id", "user_id", "file_id", "begin_validity", "end_validity"],
+        ["traffic_statistics"] = ["id", "date"]
+    };
+
+    foreach (var pair in obsoleteIndexes)
+    {
+        if (!dbClient.DbMaintenance.IsAnyTable(pair.Key))
+        {
+            continue;
+        }
+
+        foreach (var indexName in pair.Value)
+        {
+            try
+            {
+                if (dbClient.DbMaintenance.IsAnyIndex(indexName))
+                {
+                    dbClient.DbMaintenance.DropIndex(indexName, pair.Key);
+                    app.Logger.LogInformation("已移除旧索引 {IndexName} ({TableName})", indexName, pair.Key);
+                }
+            }
+            catch (Exception e)
+            {
+                app.Logger.LogWarning(e, "移除旧索引 {IndexName} ({TableName}) 失败，继续执行索引同步", indexName, pair.Key);
+            }
+        }
+    }
+
+    var indexes = new (string Table, string Name, string[] Columns, bool Unique)[]
+    {
+        ("users", "ux_users_user_id", ["user_id"], true),
+        ("users", "ux_users_username", ["username"], true),
+        ("users", "ux_users_email", ["email"], true),
+
+        ("file_info", "ux_file_info_id", ["id"], true),
+        ("file_info", "ix_file_info_user_folder_deleted_created", ["user_id", "folder_id", "is_deleted", "creation_time"], false),
+        ("file_info", "ix_file_info_user_deleted", ["user_id", "is_deleted"], false),
+        ("file_info", "ix_file_info_hash_deleted", ["hash", "is_deleted"], false),
+        ("file_info", "ix_file_info_storage_path_deleted", ["storage_path", "is_deleted"], false),
+        ("file_info", "ix_file_info_created", ["creation_time"], false),
+
+        ("folder_info", "ix_folder_user_parent_deleted_created", ["user_id", "parent_id", "is_deleted", "creation_time"], false),
+        ("folder_info", "ix_folder_user_id_deleted", ["user_id", "id", "is_deleted"], false),
+        ("folder_info", "ix_folder_user_parent_name_deleted", ["user_id", "parent_id", "folder_name", "is_deleted"], false),
+        ("folder_info", "ix_folder_user_name_deleted", ["user_id", "folder_name", "is_deleted"], false),
+
+        ("file_share", "ix_file_share_user_deleted_file", ["user_id", "is_deleted", "file_id"], false),
+        ("file_share", "ix_file_share_file_deleted", ["file_id", "is_deleted"], false),
+        ("file_share", "ix_file_share_user_deleted_end", ["user_id", "is_deleted", "end_validity"], false),
+
+        ("traffic_statistics", "ux_traffic_statistics_date", ["date"], true)
+    };
+
+    foreach (var index in indexes)
+    {
+        if (!dbClient.DbMaintenance.IsAnyTable(index.Table))
+        {
+            continue;
+        }
+
+        try
+        {
+            bool exists = dbClient.DbMaintenance.IsAnyIndex(index.Name);
+
+            if (!exists)
+            {
+                dbClient.DbMaintenance.CreateIndex(index.Table, index.Columns, index.Name, index.Unique);
+                app.Logger.LogInformation("已创建索引 {IndexName} ({TableName})", index.Name, index.Table);
+            }
+        }
+        catch (Exception e)
+        {
+            app.Logger.LogError(e, "创建索引 {IndexName} ({TableName}) 失败", index.Name, index.Table);
+        }
+    }
+}
 //文件管理初始化
 async Task FileManagementInitialization()
 {
@@ -733,7 +1053,7 @@ async Task FileManagementInitialization()
     // 创建一个临时的依赖注入作用域
     using (var scope = app.Services.CreateScope())
     {
-        var fileHandler = scope.ServiceProvider.GetRequiredService<FileHandler>();
+        var fileHandler = scope.ServiceProvider.GetRequiredService<FileService>();
         fileHandler.VerifyDirectory();
         //Console.WriteLine(await fileHandler.GetUserDirectoryFileInfo("1001"));
     }
@@ -761,7 +1081,7 @@ async Task EmailInitialization()
     using (var scope = app.Services.CreateScope())
     {
 
-        var eh = scope.ServiceProvider.GetRequiredService<EmailHandler>();
+        var eh = scope.ServiceProvider.GetRequiredService<EmailService>();
         await eh.Init();
 
     }
@@ -802,11 +1122,23 @@ async Task AIModelInitialization()
     {
         if (appConfig.aiSetting.Enable == true)
         {
-            var aiService = scope.ServiceProvider.GetRequiredService<AiVectorService>();
-            app.Logger.LogInformation("正在初始化AI模型...");
-            IWebHostEnvironment rootpath = scope.ServiceProvider.GetRequiredService<IWebHostEnvironment>();
-            await aiService.InitModelsAsync(rootpath.ContentRootPath);
-            app.Logger.LogInformation("模型加载完成");
+            try
+            {
+                var imgAiService = scope.ServiceProvider.GetRequiredService<ImgAiVectorService>();
+                var textAiService = scope.ServiceProvider.GetRequiredService<TextAiVectorService>();
+                app.Logger.LogInformation("正在初始化AI模型...");
+                IWebHostEnvironment rootpath = scope.ServiceProvider.GetRequiredService<IWebHostEnvironment>();
+                await imgAiService.InitModelsAsync(Path.Combine(rootpath.ContentRootPath, "Onnx/vit"));
+                await textAiService.InitModelsAsync(Path.Combine(rootpath.ContentRootPath, "Onnx/bgem3"));
+                app.Logger.LogInformation("模型加载完成");
+            }
+            catch (Exception e)
+            {
+                appConfig.aiSetting.Enable = false;
+                app.Logger.LogError("AI模型初始化失败,已自动关闭模型调用链："+e.Message);
+            
+            }
+           
         }
     }
 }

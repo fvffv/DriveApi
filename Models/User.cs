@@ -8,10 +8,9 @@ namespace drive_api.Models
     /// 用户信息实体类，适配 SqlSugar ORM 框架。
     /// </summary>
     [SugarTable("users", "用户信息表")] // 将类映射到 'users' 表，并添加表注释
-    [SugarIndex("user_id", nameof(User.UserId), OrderByType.Desc, true)]
-    [SugarIndex("Username", nameof(User.Username), OrderByType.Desc, true)]
-    [SugarIndex("email", nameof(User.Email), OrderByType.Desc, true)]
-    [SugarIndex("created_at", nameof(User.CreatedAt), OrderByType.Asc)]
+    [SugarIndex("ux_users_user_id", nameof(User.UserId), OrderByType.Asc, true)]
+    [SugarIndex("ux_users_username", nameof(User.Username), OrderByType.Asc, true)]
+    [SugarIndex("ux_users_email", nameof(User.Email), OrderByType.Asc, true)]
     public class User
     {
         /// <summary>

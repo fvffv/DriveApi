@@ -6,9 +6,11 @@ using drive_api.Services.Email;
 using drive_api.Services.FileManagement;
 using drive_api.Services.MQ;
 using driveApi.Services.JWT;
+using Serilog;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 
 namespace drive_api.Services.Config
 {
@@ -26,21 +28,64 @@ namespace drive_api.Services.Config
         public AISetting aiSetting { get; set; }
         public ServerSettings serverSettings { get; set; }
     }
+    public class SerilogSetting
+    {
+        [JsonPropertyName("MinimumLevel")]
+        public MinimumLevelSetting MinimumLevel { get; set; } = new();
+    }
+
+    public class MinimumLevelSetting
+    {
+        [JsonPropertyName("Default")]
+        public string Default { get; set; } = "Information";
+
+        [JsonPropertyName("Override")]
+        public Dictionary<string, string> Override { get; set; } = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Microsoft"] = "Warning",
+            ["System"] = "Warning",
+            ["Microsoft.Hosting.Lifetime"] = "Information",
+            ["Microsoft.AspNetCore.Watch.BrowserRefresh"] = "Warning"
+        };
+    }
     public class AppConfigInfo
     {
         // 增加一个静态锁，防止多线程并发修改文件导致文件损坏
         private static readonly object _saveLock = new object();
-        public JwtSetting jwtSetting { get; }
-        public FileSetting fileSetting { get; }
-        public DbSetting dbSetting { get; }
-        public CacheSetting cacheSetting { get; }
-        public UserSetting userSetting { get; }
-        public EmailSetting emailSetting { get; }
-        private IConfiguration _configuration { get; }
-        public BasicInformation basicInformation { get; }
-        public MQSetting mqSetting { get; }
-        public AISetting aiSetting { get; }
-        public ServerSettings serverSettings { get; }
+       
+        private IConfiguration _configuration { get; set; }
+        [JsonPropertyName("Serilog")]
+        public SerilogSetting Serilog { get; set; } = new();
+
+        [JsonPropertyName("JwtConfig")]
+        public JwtSetting jwtSetting { get; set; } = new JwtSetting();
+
+        [JsonPropertyName("FileConfig")]
+        public FileSetting fileSetting { get; set; } = new FileSetting();
+
+        [JsonPropertyName("DbConfig")]
+        public DbSetting dbSetting { get; set; } = new DbSetting();
+
+        [JsonPropertyName("CacheConfig")]
+        public CacheSetting cacheSetting { get; set; } = new CacheSetting();
+
+        [JsonPropertyName("UserConfig")]
+        public UserSetting userSetting { get; set; } = new UserSetting();
+
+        [JsonPropertyName("EmailConfig")]
+        public EmailSetting emailSetting { get; set; } = new EmailSetting();
+
+        [JsonPropertyName("BasicInformation")]
+        public BasicInformation basicInformation { get; set; } = new BasicInformation();
+
+        [JsonPropertyName("MQConfig")]
+        public MQSetting mqSetting { get; set; } = new MQSetting();
+
+        [JsonPropertyName("AIConfig")]
+        public AISetting aiSetting { get; set; } = new AISetting();
+
+        [JsonPropertyName("ServerSettings")]
+        public ServerSettings serverSettings { get; set; } = new ServerSettings();
         public AppConfigInfo(IConfiguration configuration)
         {
             _configuration = configuration;
@@ -56,7 +101,8 @@ namespace drive_api.Services.Config
             serverSettings = _configuration.GetSection("ServerSettings").Get<ServerSettings>();
 
         }
-
+        // 补上一个无参构造函数
+        public AppConfigInfo() { }
         /// <summary>
         /// 线程安全地更新内存配置并持久化到文件
         /// </summary>
@@ -120,6 +166,7 @@ namespace drive_api.Services.Config
 
             }
         }
+      
         /// <summary>
         /// 将 source 中的有效值（非空、非 "******"）更新到 target 中
         /// </summary>

@@ -3,7 +3,7 @@
 namespace drive_api.Models
 {
     [SugarTable("img_vectorcs", "图片向量，用于语义搜索")]
-    [SugarIndex("idx_userid_fileid", nameof(ImgVectorcs.UserId), OrderByType.Desc, nameof(ImgVectorcs.FileId), OrderByType.Desc)]
+    [SugarIndex("ix_img_vectorcs_user_id", nameof(ImgVectorcs.UserId), OrderByType.Asc)]
     public class ImgVectorcs
     {
         [SugarColumn(ColumnName = "file_id", IsPrimaryKey = true, ColumnDescription = "图片的id")]

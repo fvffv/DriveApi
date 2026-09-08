@@ -4,17 +4,17 @@ using drive_api.Services.Config;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
-using static drive_api.Services.AdminManagement.AdminHandler;
+using static drive_api.Services.AdminManagement.AdminService;
 
 namespace drive_api.Controllers
 {
     [Route("api/[controller]/[action]")]
     [ApiController]
     [AdminOnly]
-    public class AdminController(ILogger<AdminController> logger, AdminHandler ah) : ControllerBase
+    public class AdminController(ILogger<AdminController> logger, AdminService ah) : ControllerBase
     {
         private readonly ILogger<AdminController> _logger = logger;
-        private readonly AdminHandler _ah = ah;
+        private readonly AdminService _ah = ah;
         [HttpGet]
         [Authorize]
         public async Task<IActionResult> GetDataStatistics()

@@ -29,7 +29,7 @@
         /// <summary>
         /// 临时文件路径
         /// </summary>
-        public string TempFilePath { get; set; }
+        public string TempFilePath { get; set; } = AppContext.BaseDirectory;
         /// <summary>
         /// 文件分块上传的大小，默认10MB
         /// </summary>

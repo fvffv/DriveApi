@@ -1,4 +1,6 @@
-﻿using SqlSugar;
+﻿using Microsoft.Data.Sqlite;
+using SqlSugar;
+using System.Data;
 
 namespace drive_api.Services.Db
 {
@@ -30,8 +32,7 @@ namespace drive_api.Services.Db
             // 如果需要，可以在这里进行更复杂的处理，
             // 比如记录到文件、发送邮件通知等。
         }
-
-
+    
 
     }
 }

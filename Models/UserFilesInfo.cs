@@ -8,6 +8,14 @@
         public int TotalFileCount { get; set; }
     }
 
+    public class UserFilesInfoSimplify
+    {
+        public UserFilesInfoItemSimplify[] FileInfos { get; set; }
+        public UserDirsInfoItem[] Dirs { get; set; }
+
+        public int TotalFileCount { get; set; }
+    }
+
     public class UserFilesInfoItem
     {
         public Guid Id { get; set; }
@@ -17,8 +25,14 @@
         public Guid FolderId { get; set; }
         public DateTime CreationTime { get; set; }
         public DateTime LastModifiedTime { get; set; }
-        public string FileShare { get; set; }
 
+
+    }
+    public class UserFilesInfoItemSimplify
+    {
+        public Guid Id { get; set; }
+        public string FileName { get; set; }
+        public DateTime CreationTime { get; set; }
 
     }
     public class UserDirsInfoItem

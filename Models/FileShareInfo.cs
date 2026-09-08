@@ -3,11 +3,9 @@
 namespace drive_api.Models
 {
     [SugarTable("file_share", "用户文件分享表")]
-    [SugarIndex("id", "Id", OrderByType.Desc, true)]
-    [SugarIndex("user_id", "UserId", OrderByType.Asc, false)]
-    [SugarIndex("file_id", "ShareFileId", OrderByType.Asc, false)]
-    [SugarIndex("begin_validity", "ShareFileId", OrderByType.Asc, false)]
-    [SugarIndex("end_validity", "ShareFileId", OrderByType.Asc, false)]
+    [SugarIndex("ix_file_share_user_deleted_file", nameof(FileShareInfo.UserId), OrderByType.Asc, nameof(FileShareInfo.IsDeleted), OrderByType.Asc, nameof(FileShareInfo.ShareFileId), OrderByType.Asc)]
+    [SugarIndex("ix_file_share_file_deleted", nameof(FileShareInfo.ShareFileId), OrderByType.Asc, nameof(FileShareInfo.IsDeleted), OrderByType.Asc)]
+    [SugarIndex("ix_file_share_user_deleted_end", nameof(FileShareInfo.UserId), OrderByType.Asc, nameof(FileShareInfo.IsDeleted), OrderByType.Asc, nameof(FileShareInfo.EndValidity), OrderByType.Asc)]
     public class FileShareInfo
     {
         [SugarColumn(IsPrimaryKey = true, ColumnName = "id", ColumnDescription = "文件分享表唯一ID")]

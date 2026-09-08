@@ -49,7 +49,6 @@ public class TrafficFlushWorker(TrafficStoreService trafficStore, IServiceScopeF
             }
         }
 
-        // ========================== 2. 周期性持久化阶段 ==========================
         // 只要服务未收到停止请求，就持续轮询执行
         while (!stoppingToken.IsCancellationRequested)
         {

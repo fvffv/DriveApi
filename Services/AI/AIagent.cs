@@ -3,6 +3,7 @@ using drive_api.Services.Config;
 using drive_api.Services.FileManagement;
 using drive_api.Services.UserManagement;
 using Microsoft.SemanticKernel;
+using RabbitMQ.Client;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
@@ -12,11 +13,11 @@ namespace drive_api.Services.AI
     public class AIagent
     {
         private readonly ILogger<AIagent> _logger;
-        private readonly FileHandler _fh;
-        private readonly UserHandler _userHandler;
+        private readonly FileService _fh;
+        private readonly UserService _userHandler;
         private readonly AppConfigInfo _appConfigInfo;
 
-        public AIagent(ILogger<AIagent> logger, FileHandler fh, UserHandler userHandler, AppConfigInfo appConfigInfo)
+        public AIagent(ILogger<AIagent> logger, FileService fh, UserService userHandler, AppConfigInfo appConfigInfo)
         {
             _logger = logger;
             _fh = fh;
@@ -24,7 +25,7 @@ namespace drive_api.Services.AI
             _appConfigInfo = appConfigInfo;
         }
 
-        [KernelFunction, Description("智能搜索用户网盘中的文件或文件夹（支持模糊搜索和AI向量搜索）")]
+        [KernelFunction, Description("智能搜索用户网盘中的文件或文件夹（支持模糊搜索和AI向量搜索）, 如果结果名称你觉得明显和搜索关键词不符，请使用GetFileContent方法二次筛选")]
         [return: Description("返回 JSON 字符串。格式为 {\"Status\":0, \"Data\":{...}}。Data中包含 FileInfos(文件列表) 和 Dirs(文件夹列表)。每个项包含文件ID、名称和大小等。如果 Status 为 1，Data 为错误信息。")]
         public async Task<string> SearchFiles(
             [Required][Description("搜索表单,里面有关键词;文件类型;文件大小;日期等")] SearchInfo searchInfo,
@@ -50,7 +51,8 @@ namespace drive_api.Services.AI
         public async Task<string> ListFiles(
      [Description("目标文件夹的ID。如果不填或传入 null，系统将自动获取该用户的根目录文件列表。")] string? folderId,
      [Description("页码，默认为 1。如需获取下一页数据请递增此值。")] int pageIndex,
-     [Description("每页显示的文件数量，默认为 50。如果 AI 需要一次性分析较多文件，可适当调大此值（最大建议不超过200）。")] int pageSize,
+     [Description("每页显示的文件数量，默认为 50。如果 AI 需要一次性分析较多文件，可适当调大此值")] int pageSize,
+     [Description("是否获取简化信息，只包含文件id,名称,创建日期，对于移动文件、重命名等不需要详细信息的场景")] bool isSimplify ,
      Kernel kernel)
         {
             var userId = kernel.Data["userId"]?.ToString();
@@ -67,7 +69,7 @@ namespace drive_api.Services.AI
             if (pageSize <= 0) pageSize = 50;
 
             // 调用底层已支持分页的方法
-            DefaultMsg result = await _fh.GetUserDirectoryFileInfo(userId, folderId, pageIndex, pageSize);
+            DefaultMsg result = await _fh.GetUserDirectoryFileInfo(userId, folderId, pageIndex, pageSize, isSimplify);
 
             return JsonSerializer.Serialize(result);
         }
@@ -310,6 +312,25 @@ namespace drive_api.Services.AI
             DefaultMsg result = await _fh.GetFullFolderPathAsync(userId, folderId);
 
             return JsonSerializer.Serialize(result);
+
+
+
         }
+        [KernelFunction, Description("读取指定文件的部分文本内容。可指定读取的字节长度和起始偏移量，此方法一般用在SearchFiles方法搜索后进一步确认文件内容是否和搜索关键词匹配。适用于查看大文件片段或搜索结果预览。以及在用户想要查看文件内容时调用。")]
+        [return: Description("返回 JSON 字符串。如果 Status 为 0，Data 里面就是获取到的文件字符串。")]
+        public async Task<string> GetFileContent(
+      [Required, Description("文件的唯一标识 ID (GUID 格式)")] string fileId,
+      [Description("读取的字符数（非强制，默认 256 字符）")] int length = 256,
+      [Description("读取文件的起始字节偏移量（非强制，默认从 0 开始，即文件开头）")] int fileOffset = 0,
+      Kernel kernel = null!)
+        {
+            var userId = kernel.Data["userId"]?.ToString();
+
+            // 传递 fileId, length, fileOffset 参数
+            DefaultMsg result = await _fh.GetFileContent(userId, fileId, length, fileOffset);
+
+            return JsonSerializer.Serialize(result);
+        }
+
     }
 }
