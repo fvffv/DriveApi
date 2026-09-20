@@ -7,5 +7,9 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../source/driveApi.csproj" />
+    <!-- 测试自身直接使用 ONNX API，显式引用托管程序集及原生包。
+         版本由发布脚本从主项目的还原结果传入，避免两边版本漂移。 -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="$(NativeSmokeOnnxVersion)" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Managed" Version="$(NativeSmokeOnnxManagedVersion)" />
   </ItemGroup>
 </Project>

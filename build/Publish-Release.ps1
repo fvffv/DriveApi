@@ -43,7 +43,21 @@ try {
         New-Item -ItemType Directory -Path $probe, $probeRun | Out-Null
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'NativeSmoke.csproj.template') -Destination (Join-Path $probe 'NativeSmoke.csproj')
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'NativeSmoke.cs.template') -Destination (Join-Path $probe 'NativeSmoke.cs')
-        & dotnet publish (Join-Path $probe 'NativeSmoke.csproj') @publishArgs -o $probePublish 2>&1 | Tee-Object -FilePath (Join-Path $output "native-$Runtime.log")
+
+        # 使用主项目实际还原的版本，而不是在测试模板里再硬编码一组版本号。
+        $assets = Get-Content -LiteralPath (Join-Path $source 'obj/project.assets.json') -Raw | ConvertFrom-Json
+        $probeArgs = @($publishArgs)
+        $probePackages = [ordered]@{
+            'Microsoft.ML.OnnxRuntime' = 'NativeSmokeOnnxVersion'
+            'Microsoft.ML.OnnxRuntime.Managed' = 'NativeSmokeOnnxManagedVersion'
+        }
+        foreach ($packageName in $probePackages.Keys) {
+            $matches = @($assets.libraries.PSObject.Properties.Name | Where-Object { $_ -like "$packageName/*" })
+            if ($matches.Count -ne 1) { throw "Cannot resolve $packageName from the main project's assets file." }
+            $version = $matches[0].Split('/')[1]
+            $probeArgs += "-p:$($probePackages[$packageName])=$version"
+        }
+        & dotnet publish (Join-Path $probe 'NativeSmoke.csproj') @probeArgs -o $probePublish 2>&1 | Tee-Object -FilePath (Join-Path $output "native-$Runtime.log")
         if ($LASTEXITCODE -ne 0) { throw 'Native dependency probe failed to publish.' }
         $probeName = if ($Runtime.StartsWith('win-')) { 'NativeSmoke.exe' } else { 'NativeSmoke' }
         Copy-Item -LiteralPath (Join-Path $probePublish $probeName) -Destination $probeRun
