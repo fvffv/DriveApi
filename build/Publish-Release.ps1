@@ -48,6 +48,10 @@ try {
         $assets = Get-Content -LiteralPath (Join-Path $source 'obj/project.assets.json') -Raw | ConvertFrom-Json
         $probeArgs = @($publishArgs)
         $probePackages = [ordered]@{
+            'Microsoft.Data.Sqlite.Core' = 'NativeSmokeSqliteVersion'
+            'SQLitePCLRaw.bundle_e_sqlite3' = 'NativeSmokeSqliteBundleVersion'
+            'SQLitePCLRaw.lib.e_sqlite3' = 'NativeSmokeSqliteNativeVersion'
+            'sqlite-vec' = 'NativeSmokeVectorVersion'
             'Microsoft.ML.OnnxRuntime' = 'NativeSmokeOnnxVersion'
             'Microsoft.ML.OnnxRuntime.Managed' = 'NativeSmokeOnnxManagedVersion'
         }

@@ -6,9 +6,12 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../source/driveApi.csproj" />
-    <!-- 测试自身直接使用 ONNX API，显式引用托管程序集及原生包。
+    <!-- 独立验证原生依赖，不通过 Web API 可执行项目传递编译引用。
          版本由发布脚本从主项目的还原结果传入，避免两边版本漂移。 -->
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="$(NativeSmokeSqliteVersion)" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="$(NativeSmokeSqliteBundleVersion)" />
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="$(NativeSmokeSqliteNativeVersion)" />
+    <PackageReference Include="sqlite-vec" Version="$(NativeSmokeVectorVersion)" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="$(NativeSmokeOnnxVersion)" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime.Managed" Version="$(NativeSmokeOnnxManagedVersion)" />
   </ItemGroup>
