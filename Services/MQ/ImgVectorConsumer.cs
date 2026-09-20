@@ -27,7 +27,7 @@ namespace drive_api.Services.MQ
                 topic: "ImgVector",
                 subscriberName: "ImgVector",
                 handler: HandleMessageAsync,
-                concurrencyCount: 2  // 这里设置并发数！
+                concurrencyCount: 3  // 这里设置并发数！
             );
         }
 

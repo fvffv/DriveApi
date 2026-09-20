@@ -23,7 +23,7 @@ namespace drive_api.Services.MQ
                 topic: "ImgComp",
                 subscriberName: "ImgComp",
                 handler: HandleMessageAsync,
-                concurrencyCount: 3  // 这里设置并发数
+                concurrencyCount: 5  // 这里设置并发数
             );
         }
 
