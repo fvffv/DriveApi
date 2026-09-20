@@ -1,0 +1,19 @@
+using Microsoft.Data.Sqlite;
+using Microsoft.ML.OnnxRuntime;
+
+// 在仅有单文件可执行程序的目录运行，验证自解压后的原生库能被找到。
+using var connection = new SqliteConnection("Data Source=:memory:");
+connection.Open();
+connection.LoadVector();
+using var command = connection.CreateCommand();
+command.CommandText = "SELECT vec_version();";
+Console.WriteLine($"sqlite-vec: {command.ExecuteScalar()}");
+command.CommandText = "CREATE VIRTUAL TABLE vectors USING vec0(id INTEGER PRIMARY KEY, vector FLOAT[3] distance_metric=cosine);";
+command.ExecuteNonQuery();
+command.CommandText = "INSERT INTO vectors(id, vector) VALUES (1, '[1,0,0]'), (2, '[0,1,0]');";
+command.ExecuteNonQuery();
+command.CommandText = "SELECT id FROM vectors WHERE vector MATCH '[1,0,0]' AND k = 1 ORDER BY distance;";
+if (Convert.ToInt64(command.ExecuteScalar()) != 1)
+    throw new InvalidOperationException("SQLite 向量余弦查询失败。");
+Console.WriteLine($"ONNX Runtime: {OrtEnv.Instance().GetVersionString()}");
+Console.WriteLine("Native dependency smoke check passed.");

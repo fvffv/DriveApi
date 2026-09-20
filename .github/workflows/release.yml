@@ -1,0 +1,86 @@
+name: Release DriveApi
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: driveapi-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.rid }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+            runner: windows-2025
+          - rid: linux-x64
+            runner: ubuntu-24.04
+          - rid: linux-arm64
+            runner: ubuntu-24.04-arm
+          - rid: osx-arm64
+            runner: macos-14
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+      - name: Publish, check native dependencies and package
+        shell: pwsh
+        run: ./build/Publish-Release.ps1 -Runtime '${{ matrix.rid }}' -OutputDirectory '${{ runner.temp }}/driveapi-artifacts'
+      - name: Save release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.rid }}
+          path: |
+            ${{ runner.temp }}/driveapi-artifacts/*.zip
+            ${{ runner.temp }}/driveapi-artifacts/*.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+      - name: Save publish and native check logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.rid }}
+          path: ${{ runner.temp }}/driveapi-artifacts/*.log
+          if-no-files-found: warn
+
+  release:
+    name: Upload all four packages to Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: package-*
+          merge-multiple: true
+          path: packages
+      - name: Create or update release for this tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in driveApi-win-x64.zip driveApi-linux-x64.tar.gz driveApi-linux-arm64.tar.gz driveApi-osx-arm64.tar.gz; do
+            test -s "packages/$name"
+          done
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" --generate-notes --draft
+          fi
+          gh release upload "$RELEASE_TAG" packages/* --clobber
+          gh release edit "$RELEASE_TAG" --draft=false

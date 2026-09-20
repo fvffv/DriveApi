@@ -1,0 +1,25 @@
+<Project>
+  <!-- 只导入隔离的发布副本，不改变本地开发配置。 -->
+  <PropertyGroup>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+    <PublishAot>false</PublishAot>
+    <DebugType>None</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <IsTransformWebConfigDisabled>true</IsTransformWebConfigDisabled>
+    <!-- sqlite-vec 的旧检查只认 x86/x64，但包内已有 Linux/macOS ARM64 库。
+         NativeSmoke 会实际验证目标架构的 SQLite、vec0 和 ONNX 库。 -->
+    <EnableUnsupportedPlatformTargetCheck>false</EnableUnsupportedPlatformTargetCheck>
+  </PropertyGroup>
+  <Target Name="KeepReleaseConfigurationExternal" AfterTargets="ComputeResolvedFilesToPublishList" BeforeTargets="GenerateSingleFileBundle">
+    <ItemGroup>
+      <ResolvedFileToPublish Update="@(ResolvedFileToPublish)" Condition="'%(Filename)%(Extension)' == 'appsettings.json' Or '%(Filename)%(Extension)' == 'EmailCodeTemplate.html'">
+        <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+</Project>
